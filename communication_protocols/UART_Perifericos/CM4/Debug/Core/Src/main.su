@@ -1,0 +1,4 @@
+../Core/Src/main.c:9:6:uart3_init	4	static
+../Core/Src/main.c:48:6:uart3_write_char	16	static
+../Core/Src/main.c:53:6:uart3_read_char	4	static
+../Core/Src/main.c:58:6:uart3_write_string	16	static

@@ -1,0 +1,7 @@
+../Core/Src/main.c:13:24:brr_from	16	static
+../Core/Src/main.c:20:13:DWT_Init	4	static
+../Core/Src/main.c:27:13:delay_ms	56	static
+../Core/Src/main.c:35:13:GPIO_Init_USART3_PB10_PB11	4	static
+../Core/Src/main.c:60:13:USART3_Init_9600_8N1	16	static
+../Core/Src/main.c:89:13:USART3_SendByte	16	static
+../Core/Src/main.c:95:5:main	8	static
