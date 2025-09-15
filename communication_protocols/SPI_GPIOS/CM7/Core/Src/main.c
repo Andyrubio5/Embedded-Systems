@@ -1,136 +1,147 @@
-#include "stm32h7xx.h"   // Cabecera CMSIS/HAL específica de la familia STM32H7 (define registros, SystemCoreClock, etc.)
+// SPI bit-bang STM32H7 (GPIOA: PA5 SCK, PA8 MOSI, PA6 MISO, PA4 CS)
+// Bare-metal: without "stm32h7xx.h" — only stdint and MMIO.
+#include <stdint.h>
 
-/* ===== Lista de pines usados =====
-   SPI_PORT: GPIOA
-   SPI_SCK : PA5  -> Clock
-   SPI_MOSI: PA8  -> Master Out Slave In
-   SPI_MISO: PA6  -> Master In Slave Out
-   SPI_CS  : PA4  -> Chip Select
-*/
+/* ================== MMIO Utility ================== */
+#define REG32(addr) (*(volatile uint32_t *)(addr))
 
-/* ===== Configuración de pines SPI ===== */
-#define SPI_PORT       GPIOA                // Estructura de registros del puerto GPIOA
-#define SPI_PORT_ENR   RCC_AHB4ENR_GPIOAEN  // Bit para habilitar reloj de GPIOA en el bus AHB4
-#define SPI_SCK        5u                   // Número de pin para SCK: PA5
-#define SPI_MOSI       8u                   // Número de pin para MOSI: PA8
-#define SPI_MISO       6u                   // Número de pin para MISO: PA6
-#define SPI_CS         4u                   // Número de pin para CS:  PA4
+/* ================== Base addresses ================== */
+/* RCC (Reset & Clock Control) */
+#define RCC_BASE        0x58024400UL
+/* GPIO */
+#define GPIOA_BASE      0x58020000UL
+/* CoreDebug / DWT (for DWT->CYCCNT) */
+#define COREDEBUG_DEMCR 0xE000EDFCUL     // Debug Exception and Monitor Control Register
+#define DWT_BASE        0xE0001000UL
+#define DWT_CTRL        REG32(DWT_BASE + 0x000UL)
+#define DWT_CYCCNT      REG32(DWT_BASE + 0x004UL)
+#define DWT_LAR         REG32(DWT_BASE + 0xFB0UL)  // Lock Access Register
 
-/* ===== Helpers GPIO: escritura rápida usando BSRR =====
-   BSRR permite SET/RESET atómico de pines:
-   - Escribir 1 en bit n      -> pone pin n en nivel alto (SET)
-   - Escribir 1 en bit n+16   -> pone pin n en nivel bajo  (RESET)
-   Ventaja: no hace read-modify-write y evita condiciones de carrera. */
-static inline void sck_high(void) { SPI_PORT->BSRR = (1u << SPI_SCK); }          // SCK = 1
-static inline void sck_low(void)  { SPI_PORT->BSRR = (1u << (SPI_SCK + 16u)); }  // SCK = 0
-static inline void mosi_high(void){ SPI_PORT->BSRR = (1u << SPI_MOSI); }         // MOSI = 1
-static inline void mosi_low(void) { SPI_PORT->BSRR = (1u << (SPI_MOSI + 16u)); } // MOSI = 0
-static inline void cs_high(void)  { SPI_PORT->BSRR = (1u << SPI_CS); }           // CS = 1 (inactivo)
-static inline void cs_low(void)   { SPI_PORT->BSRR = (1u << (SPI_CS + 16u)); }   // CS = 0 (activo)
+/* ================== Register offsets ================== */
+/* RCC */
+#define RCC_AHB4ENR     REG32(RCC_BASE + 0xE0UL)
+/* GPIO (valid for any GPIOx) */
+#define GPIO_MODER(p)   REG32((p) + 0x00UL)
+#define GPIO_OTYPER(p)  REG32((p) + 0x04UL)
+#define GPIO_OSPEEDR(p) REG32((p) + 0x08UL)
+#define GPIO_PUPDR(p)   REG32((p) + 0x0CUL)
+#define GPIO_IDR(p)     REG32((p) + 0x10UL)
+#define GPIO_ODR(p)     REG32((p) + 0x14UL)
+#define GPIO_BSRR(p)    REG32((p) + 0x18UL)
 
-/* ===== Inicialización DWT para delays precisos =====
-   El DWT (Data Watchpoint and Trace) del Cortex-M7 incluye un contador de ciclos (CYCCNT).
-   Lo habilitamos para poder medir tiempo y construir delays por “busy-wait” con precisión de ciclos. */
+/* ================== Useful bits ================== */
+#define DEMCR_TRCENA    (1UL << 24)          // Enable trace block (needed for DWT)
+#define DWT_CTRL_CYCCNTENA (1UL << 0)
+
+#define RCC_AHB4ENR_GPIOAEN (1UL << 0)       // Clock enable for GPIOA
+
+/* ================== Pin mapping ================== */
+#define SPI_PORT_BASE   GPIOA_BASE
+#define SPI_SCK         5U   // PA5
+#define SPI_MOSI        8U   // PA8
+#define SPI_MISO        6U   // PA6
+#define SPI_CS          4U   // PA4
+
+/* ================== CPU frequency for delays ================== */
+#ifndef CPU_HZ
+#define CPU_HZ          64000000UL           // Adjust to your real SYSCLK (e.g. 400000000UL)
+#endif
+
+/* ================== BSRR helpers (atomic set/reset) ================== */
+static inline void sck_high(void) { GPIO_BSRR(SPI_PORT_BASE) = (1UL << SPI_SCK); }
+static inline void sck_low(void)  { GPIO_BSRR(SPI_PORT_BASE) = (1UL << (SPI_SCK + 16U)); }
+static inline void mosi_high(void){ GPIO_BSRR(SPI_PORT_BASE) = (1UL << SPI_MOSI); }
+static inline void mosi_low(void) { GPIO_BSRR(SPI_PORT_BASE) = (1UL << (SPI_MOSI + 16U)); }
+static inline void cs_high(void)  { GPIO_BSRR(SPI_PORT_BASE) = (1UL << SPI_CS); }
+static inline void cs_low(void)   { GPIO_BSRR(SPI_PORT_BASE) = (1UL << (SPI_CS + 16U)); }
+
+/* ================== DWT for precise delays ================== */
 static void DWT_Init(void) {
-    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;  // Habilita el bloque de trazado (necesario para usar DWT)
-    DWT->LAR = 0xC5ACCE55;                           // Desbloquea el acceso a registros protegidos del DWT (requerido en H7)
-    DWT->CYCCNT = 0;                                 // Reinicia el contador de ciclos
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;             // Activa el conteo de ciclos (CYCCNT empieza a incrementar)
+    REG32(COREDEBUG_DEMCR) |= DEMCR_TRCENA;        // enable DWT
+    DWT_LAR = 0xC5ACCE55UL;                        // unlock DWT (needed on some cores)
+    DWT_CYCCNT = 0;
+    DWT_CTRL |= DWT_CTRL_CYCCNTENA;                // start cycle counter
 }
 
-/* ===== Delay en milisegundos usando ciclos de CPU =====
-   Calcula cuántos ciclos corresponden al tiempo pedido en ms según SystemCoreClock.
-   Luego espera activamente (busy-wait) hasta que el delta de ciclos se cumpla. */
+/* ================== Cycle-based delays ================== */
+static void delay_us(uint32_t us) {
+    uint32_t start = DWT_CYCCNT;
+    uint32_t cycles = (uint32_t)((CPU_HZ / 1000000UL) * us);
+    while ((uint32_t)(DWT_CYCCNT - start) < cycles) { /* busy wait */ }
+}
+
 static void delay_ms(uint32_t ms) {
-    uint32_t start = DWT->CYCCNT;                                    // Muestra de inicio
-    uint64_t cycles = (uint64_t)SystemCoreClock * ms / 1000u;        // Ciclos necesarios = fCPU * (ms/1000)
-    while ((uint32_t)(DWT->CYCCNT - start) < cycles) { /* espera */ } // Bucle vacío hasta cumplir tiempo
+    uint32_t start = DWT_CYCCNT;
+    uint32_t cycles = (uint32_t)((CPU_HZ / 1000UL) * ms);
+    while ((uint32_t)(DWT_CYCCNT - start) < cycles) { /* busy wait */ }
 }
 
-/* ===== Inicialización de GPIO para SPI (bit-bang) =====
-   Configura SCK, MOSI y CS como salidas push-pull, muy alta velocidad, sin pull-ups/downs.
-   Deja MISO como entrada (por defecto). */
+/* ================== GPIO Init for SPI bit-bang ================== */
 static void GPIO_Init_SPI(void) {
-    // 1) Habilita el reloj del puerto GPIOA en RCC (sin reloj no se pueden escribir registros del puerto)
-    RCC->AHB4ENR |= SPI_PORT_ENR;
+    /* 1) Enable GPIOA clock */
+    RCC_AHB4ENR |= RCC_AHB4ENR_GPIOAEN;
 
-    // 2) Configura los pines de salida (SCK, MOSI, CS)
-    uint32_t pins[] = {SPI_SCK, SPI_MOSI, SPI_CS};
-    for (int i = 0; i < 3; i++) {
-        // MODER: 00=input, 01=output, 10=AF, 11=analog. Aquí ponemos 01 (salida)
-        SPI_PORT->MODER   &= ~(3u << (pins[i]*2));  // Limpia los dos bits del pin
-        SPI_PORT->MODER   |=  (1u << (pins[i]*2));  // 01 -> salida
+    /* 2) MODER: SCK/MOSI/CS as outputs (01), MISO as input (00) */
+    uint32_t moder = GPIO_MODER(SPI_PORT_BASE);
+    moder &= ~((3UL << (SPI_SCK*2)) | (3UL << (SPI_MOSI*2)) | (3UL << (SPI_CS*2)) | (3UL << (SPI_MISO*2)));
+    moder |=  (1UL << (SPI_SCK*2)) | (1UL << (SPI_MOSI*2)) | (1UL << (SPI_CS*2));
+    GPIO_MODER(SPI_PORT_BASE) = moder;
 
-        // OTYPER: 0=push-pull, 1=open-drain. Usamos push-pull
-        SPI_PORT->OTYPER  &= ~(1u << pins[i]);
+    /* 3) OTYPER: push-pull for outputs */
+    uint32_t otyper = GPIO_OTYPER(SPI_PORT_BASE);
+    otyper &= ~((1UL << SPI_SCK) | (1UL << SPI_MOSI) | (1UL << SPI_CS));
+    GPIO_OTYPER(SPI_PORT_BASE) = otyper;
 
-        // OSPEEDR: 00=bajo, 01=medio, 10=alto, 11=muy alto. Usamos muy alto para bordes más rápidos
-        SPI_PORT->OSPEEDR |=  (3u << (pins[i]*2));
+    /* 4) OSPEEDR: high speed (11) for SCK/MOSI/CS */
+    uint32_t ospeed = GPIO_OSPEEDR(SPI_PORT_BASE);
+    ospeed |= (3UL << (SPI_SCK*2)) | (3UL << (SPI_MOSI*2)) | (3UL << (SPI_CS*2));
+    GPIO_OSPEEDR(SPI_PORT_BASE) = ospeed;
 
-        // PUPDR: 00=sin pull, 01=pull-up, 10=pull-down, 11=reservado. Dejamos sin pull
-        SPI_PORT->PUPDR   &= ~(3u << (pins[i]*2));
-    }
+    /* 5) PUPDR: no pull for outputs; pull-up on MISO if slave floats */
+    uint32_t pupdr = GPIO_PUPDR(SPI_PORT_BASE);
+    pupdr &= ~((3UL << (SPI_SCK*2)) | (3UL << (SPI_MOSI*2)) | (3UL << (SPI_CS*2)) | (3UL << (SPI_MISO*2)));
+    pupdr |=  (1UL << (SPI_MISO*2));   // 01 = Pull-up on MISO (adjust if not required)
+    GPIO_PUPDR(SPI_PORT_BASE) = pupdr;
 
-    // NOTA: MISO (PA6) se deja en entrada (MODER=00 por defecto). Si tu esclavo lo requiere,
-    // podrías configurar PUPDR con pull-up/down apropiado para evitar flotantes.
-
-    // 3) Estados iniciales de las líneas
-    sck_low();   // CPOL=0 -> reloj en reposo en 0
-    mosi_high(); // Estas dos líneas fuerzan breve 1->0 en MOSI; no es necesario, pero no afecta
-    mosi_low();  // MOSI=0 en reposo
-    cs_high();   // CS inactivo (alto) -> ningún esclavo seleccionado
+    /* 6) Initial states (Mode 0: CPOL=0, CPHA=0) */
+    sck_low();
+    mosi_low();
+    cs_high();      // deselect slave
 }
 
-/* ===== SPI por bit-banging: master, 8 bits, MSB primero =====
-   Protocolo equivalente a SPI Mode 0 (CPOL=0, CPHA=0):
-   - Reloj en bajo en reposo.
-   - El maestro cambia MOSI y luego hace flanco de subida en SCK; el esclavo muestrea en ese flanco.
-   - Durante el flanco de subida, el master también lee MISO. */
+/* ================== SPI bit-bang (Mode 0, MSB first) ================== */
 static uint8_t SPI_Transfer(uint8_t data) {
-    uint8_t received = 0; // Acumula los bits recibidos desde MISO
+    uint8_t rx = 0;
 
-    cs_low();             // Activa el esclavo (CS = 0). Inicio de la transacción
+    cs_low();   // select slave
 
-    // Recorre 8 bits desde el más significativo (bit 7) hacia el menos (bit 0)
-    for (int i = 7; i >= 0; i--) {
-        // 1) Prepara el bit de salida en MOSI
-        if (data & (1u << i)) {
-            mosi_high();  // Bit = 1
-        } else {
-            mosi_low();   // Bit = 0
-        }
+    for (int i = 7; i >= 0; --i) {
+        // Set MOSI
+        if (data & (1U << i)) mosi_high(); else mosi_low();
 
-        // 2) Flanco de subida del reloj: el esclavo lee MOSI y presenta su bit en MISO
+        // Rising edge: data valid, sample MISO (Mode 0)
         sck_high();
-        delay_ms(50);     // Espera para dar tiempo al esclavo (MUY lento a propósito / demo)
+        delay_us(10);
 
-        // 3) Lee MISO en el flanco de subida (típico en Mode 0)
-        received <<= 1;                              // Desplaza lo recibido (hace lugar para el nuevo bit)
-        if (SPI_PORT->IDR & (1u << SPI_MISO)) {     // Lee el registro de entrada del puerto y testea el bit MISO
-            received |= 1u;                         // Si MISO=1, añade un '1' al LSB
-        }
+        rx <<= 1;
+        if (GPIO_IDR(SPI_PORT_BASE) & (1UL << SPI_MISO)) rx |= 1U;
 
-        // 4) Flanco de bajada del reloj: fin de la ventana de muestreo
+        // Falling edge
         sck_low();
-        delay_ms(50);     // Espera antes del siguiente bit (simetría)
+        delay_us(10);
     }
 
-    cs_high();            // Desactiva el esclavo (CS = 1). Fin de la transacción
-    return received;      // Devuelve el byte que llegó por MISO durante la transferencia
+    cs_high();  // deselect slave
+    return rx;
 }
 
-/* ===== Función principal =====
-   - Actualiza SystemCoreClock (frecuencia real del CPU).
-   - Inicializa el DWT para delays precisos.
-   - Inicializa GPIOs para SPI por software.
-   - En un bucle infinito, envía el carácter 'H' y espera 1 segundo. */
+/* ================== main ================== */
 int main(void) {
-    SystemCoreClockUpdate(); // Actualiza variable global SystemCoreClock (p.ej. 400 MHz en H7 si así está configurado)
-    DWT_Init();              // Habilita contador de ciclos para temporización
-    GPIO_Init_SPI();         // Configura pines SCK/MOSI/CS como salidas y deja MISO en entrada
+    DWT_Init();
+    GPIO_Init_SPI();
 
-    while (1) {
-        (void)SPI_Transfer('H'); // Envía 'H' (0x48 = 0100 1000) y, de paso, lee un byte desde MISO (se ignora con (void))
-        delay_ms(1000);          // Espera 1 segundo entre envíos (solo para demo)
+    for (;;) {
+        (void)SPI_Transfer('H');
+        delay_ms(1000);
     }
 }
