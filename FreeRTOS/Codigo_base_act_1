@@ -1,0 +1,218 @@
+/*
+* Copyright 2016-2025 NXP
+* All rights reserved.
+*
+* SPDX-License-Identifier: BSD-3-Clause
+*/
+/**
+* @file Example3_ClosedLoopTempControlBasedOnModel.c
+* @brief Application entry point.
+*/
+/* ¿Qué incluye?
+//Simulación de temperatura en tiempo real
+//Control con histéresis (±1°C)
+//UART para:
+//Comando STATUS → muestra temperatura y estado del calefactor
+//Comando SET xx → cambia la consigna
+*
+*/
+#include <stdio.h>
+#include "board.h"
+#include "peripherals.h"
+#include "pin_mux.h"
+#include "clock_config.h"
+#include "fsl_debug_console.h"
+/* TODO: insert other include files here. */
+#include "fsl_device_registers.h"
+//#include "fsl_uart.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include "semphr.h"
+/* TODO: insert other definitions and declarations here. */
+// === CONFIGURACIÓN DEL SISTEMA ===
+#define T_AMBIENTE 25.0f
+#define T_HEATER 80.0f
+#define ALPHA 0.1f // Ganancia de calefactor
+#define BETA 0.02f // Pérdida térmica
+#define HISTERESIS 0.5f
+// === VARIABLES GLOBALES ===
+float temperatura_actual = T_AMBIENTE;
+static float temperatura_consigna = 30.0f;
+static bool calefactor_on = false;
+unsigned int temp = 25;
+// === COLA PARA COMANDOS UART ===
+#define UART_BUFFER_LEN 32
+static QueueHandle_t xQueueUART;
+SemaphoreHandle_t TempMutex;
+// === PROTOTIPOS ===
+void UART0_Init(void);
+void UART0_IRQHandler(void);
+void vTaskSimulador(void *pvParameters);
+void vTaskControl(void *pvParameters);
+void vTaskUART(void *pvParameters);
+void procesar_comando(char *cmd);
+void UARTStatusTask(void *pvParameters);
+/*
+* @brief Application entry point.
+*/
+int main(void) {
+/* Init board hardware. */
+BOARD_InitBootPins();
+BOARD_InitBootClocks();
+BOARD_InitDebugConsole();
+UART0_Init();
+TempMutex = xSemaphoreCreateMutex();
+xQueueUART = xQueueCreate(4, UART_BUFFER_LEN);
+xTaskCreate(vTaskSimulador, "Simulador", 128, NULL, 2, NULL);
+xTaskCreate(vTaskControl, "Control", 128, NULL, 2, NULL);
+xTaskCreate(vTaskUART, "UART", 256, NULL, 1, NULL);
+xTaskCreate(UARTStatusTask, "UARTAuto", 256, NULL, 1, NULL);
+vTaskStartScheduler();
+while (1) {}
+}
+// === TAREA: SIMULADOR DE TEMPERATURA ===
+void vTaskSimulador(void *pvParameters)
+{
+TickType_t xLastWakeTime = xTaskGetTickCount();
+while (1)
+{
+xSemaphoreTake(TempMutex, portMAX_DELAY);
+float delta = 0.0f;
+if (calefactor_on)
+delta += ALPHA * (T_HEATER - temperatura_actual);
+delta -= BETA * (temperatura_actual - T_AMBIENTE);
+temperatura_actual += delta;
+xSemaphoreGive(TempMutex);
+vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+}
+}
+// === TAREA: CONTROL ON/OFF CON HISTERESIS ===
+void vTaskControl(void *pvParameters)
+{
+TickType_t xLastWakeTime = xTaskGetTickCount();
+while (1)
+{
+xSemaphoreTake(TempMutex, portMAX_DELAY);
+if (temperatura_actual < (temperatura_consigna - HISTERESIS))
+calefactor_on = true;
+else if (temperatura_actual > (temperatura_consigna + HISTERESIS))
+calefactor_on = false;
+xSemaphoreGive(TempMutex);
+vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1000));
+}
+}
+// === TAREA: PROCESAMIENTO UART ===
+void vTaskUART(void *pvParameters)
+{
+char buffer[UART_BUFFER_LEN];
+while (1)
+{
+if (xQueueReceive(xQueueUART, &buffer, portMAX_DELAY))
+{
+procesar_comando(buffer);
+}
+}
+}
+// === PROCESAR COMANDOS ===
+void procesar_comando(char *cmd)
+{
+if ((strncmp(cmd, "STATUS", 6) == 0)||(strncmp(cmd, "status", 6) == 0))
+{
+xSemaphoreTake(TempMutex, portMAX_DELAY);
+int temperatura_actual_ent = (int)temperatura_actual;
+int temperatura_actual_dec = (int)((temperatura_actual -
+temperatura_actual_ent)* 100);
+int temperatura_consigna_ent = (int)temperatura_consigna;;
+int temperatura_consigna_dec = (int)((temperatura_consigna -
+temperatura_consigna_ent)* 100);;
+PRINTF("Temp: %d.%02d C | Heater: %s | Setpoint: %d.%02d C\r\n",
+temperatura_actual_ent,temperatura_actual_dec,
+calefactor_on ? "ON" : "OFF",
+temperatura_consigna_ent,temperatura_consigna_dec);
+xSemaphoreGive(TempMutex);
+}
+else if ((strncmp(cmd, "SET ", 4) == 0)||(strncmp(cmd, "set ", 4) == 0))
+{
+float nueva = atof(cmd + 4);
+temperatura_consigna = nueva;
+int temperatura_consigna_ent = (int)temperatura_consigna;;
+int temperatura_consigna_dec = (int)((temperatura_consigna -
+temperatura_consigna_ent)* 100);;
+PRINTF("Nueva consigna: %d.%02d C\r\n", temperatura_consigna_ent,
+temperatura_consigna_dec);
+}
+else if ((strncmp(cmd, "ON", 4) == 0)||(strncmp(cmd, "on", 4) == 0))
+{
+calefactor_on = true;
+PRINTF("Heater turned on.\r\n");
+}
+else if ((strncmp(cmd, "OFF", 4) == 0)||(strncmp(cmd, "off", 4) == 0))
+{
+calefactor_on = false;
+PRINTF("Heater turned off.\r\n");
+}
+else
+{
+PRINTF("Comando no reconocido\r\n");
+}
+}
+// === INTERRUPCIÓN UART ===
+void UART0_IRQHandler(void)
+{
+static char rx_buffer[UART_BUFFER_LEN];
+static uint8_t index = 0;
+if ((UART0->S1 & UART_S1_RDRF_MASK))
+{
+char c = UART0->D;
+if (c == '\r' || c == '\n')
+{
+rx_buffer[index] = '\0';
+xQueueSendFromISR(xQueueUART, &rx_buffer, NULL);
+index = 0;
+}
+else if (index < UART_BUFFER_LEN - 1)
+{
+rx_buffer[index++] = c;
+}
+}
+}
+//=== ENVÍO PERIÖDICO DE STATUS ===
+void UARTStatusTask(void *pvParameters)
+{
+for (;;)
+{
+vTaskDelay(pdMS_TO_TICKS(2000));
+xSemaphoreTake(TempMutex, portMAX_DELAY);
+int temperatura_actual_ent = (int)temperatura_actual;
+int temperatura_actual_dec = (int)((temperatura_actual -
+temperatura_actual_ent)* 100);
+int temperatura_consigna_ent = (int)temperatura_consigna;;
+int temperatura_consigna_dec = (int)((temperatura_consigna -
+temperatura_consigna_ent)* 100);;
+PRINTF("Temp: %d.%02d C | Heater: %s | Setpoint: %d.%02d C\r\n",
+temperatura_actual_ent,temperatura_actual_dec,
+calefactor_on ? "ON" : "OFF",
+temperatura_consigna_ent,temperatura_consigna_dec);
+xSemaphoreGive(TempMutex);
+}
+}
+// === CONFIGURACIÓN UART0 (115200-8N1) ===
+void UART0_Init(void)
+{
+SIM->SCGC4 |= SIM_SCGC4_UART0_MASK;
+SIM->SCGC5 |= SIM_SCGC5_PORTA_MASK;
+// PTA1 = RX, PTA2 = TX
+PORTA->PCR[1] = PORT_PCR_MUX(2);
+PORTA->PCR[2] = PORT_PCR_MUX(2);
+UART0->C2 &= ~(UART_C2_TE_MASK | UART_C2_RE_MASK);
+UART0->BDH = 0;
+UART0->BDL = (uint8_t) (SystemCoreClock / (16 * 115200));
+UART0->C4 = UART0_C4_OSR(15);
+UART0->C1 = 0;
+UART0->C2 |= UART_C2_RE_MASK | UART_C2_TE_MASK | UART_C2_RIE_MASK;
+NVIC_EnableIRQ(UART0_IRQn);
