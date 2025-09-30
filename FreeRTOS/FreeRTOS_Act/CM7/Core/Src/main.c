@@ -37,7 +37,6 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -48,7 +47,6 @@
 #define BETA            0.02f
 #define HISTERESIS      0.5f
 #define UART_BUFFER_LEN 32
-
 #define RUNTIME_STATS_TIMER_FREQ 10000  // 10 kHz para mejor resolución
 
 /* DUAL_CORE_BOOT_SYNC_SEQUENCE: Define for dual core boot synchronization    */
@@ -67,11 +65,9 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-
 COM_InitTypeDef BspCOMInit;
 
 /* USER CODE BEGIN PV */
@@ -79,14 +75,12 @@ float temperatura_actual = T_AMBIENTE;
 float temperatura_consigna = 30.0f;
 bool calefactor_on = false;
 bool auto_status_enabled = false;
-
 osThreadId_t SimuladorTaskHandle;
 osThreadId_t ControlTaskHandle;
 osThreadId_t UARTTaskHandle;
 osThreadId_t StatusTaskHandle;
 osMutexId_t TempMutexHandle;
 //osMessageQueueId_t UARTQueueHandle;
-
 static char uart_rx_buffer[UART_BUFFER_LEN];
 static uint8_t uart_rx_index = 0;
 static char uart_cmd_buffer[UART_BUFFER_LEN];  // Buffer compartido
@@ -245,7 +239,7 @@ void StartStatusTask(void *argument)
 void enviar_profiling_report(void)
 {
     char msg[100];
-    char buffer[512];  // ✅ Para runtime stats
+    char buffer[512];  //  Para runtime stats
 
     snprintf(msg, sizeof(msg), "\r\n========== PROFILING REPORT ==========\r\n");
     HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
@@ -295,12 +289,6 @@ void enviar_profiling_report(void)
 /**
  * @brief  Procesador de comandos
  */
-/**
- * @brief  Procesador de comandos (VERSIÓN CORREGIDA)
- */
-/**
- * @brief  Procesador de comandos (VERSIÓN CORREGIDA)
- */
 void procesar_comando(char *cmd)
 {
     char msg[100];
@@ -338,7 +326,7 @@ void procesar_comando(char *cmd)
 
         osMutexRelease(TempMutexHandle);
 
-        // ✅ ENVIAR EL MENSAJE
+        // ENVIAR EL MENSAJE
         HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
     }
     // ========== PROF ==========
@@ -479,7 +467,6 @@ Error_Handler();
   const osMutexAttr_t TempMutex_attributes = { .name = "TempMutex" };
   TempMutexHandle = osMutexNew(&TempMutex_attributes);
 
-  /* NO CREAR COLA - ELIMINAR ESTA SECCIÓN COMPLETAMENTE */
 
   /* Crear tareas */
   const osThreadAttr_t SimuladorTask_attributes = {
