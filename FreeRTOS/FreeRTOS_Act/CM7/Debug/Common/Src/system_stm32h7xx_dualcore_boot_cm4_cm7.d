@@ -1,5 +1,5 @@
 Common/Src/system_stm32h7xx_dualcore_boot_cm4_cm7.o: \
- /home/andy/STM32CubeIDE/workspace_1.19.0/FreeRTOS_Act/Common/Src/system_stm32h7xx_dualcore_boot_cm4_cm7.c \
+ /home/andy/Documents/Embedded-Systems/FreeRTOS/FreeRTOS_Act/Common/Src/system_stm32h7xx_dualcore_boot_cm4_cm7.c \
  ../../Drivers/CMSIS/Device/ST/STM32H7xx/Include/stm32h7xx.h \
  ../../Drivers/CMSIS/Device/ST/STM32H7xx/Include/stm32h745xx.h \
  ../../Drivers/CMSIS/Include/core_cm7.h \

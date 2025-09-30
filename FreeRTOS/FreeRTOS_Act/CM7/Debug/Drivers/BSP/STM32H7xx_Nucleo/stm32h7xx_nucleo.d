@@ -1,6 +1,6 @@
 Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo.o: \
- /home/andy/STM32CubeIDE/workspace_1.19.0/FreeRTOS_Act/Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo.c \
- /home/andy/STM32CubeIDE/workspace_1.19.0/FreeRTOS_Act/Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo.h \
+ /home/andy/Documents/Embedded-Systems/FreeRTOS/FreeRTOS_Act/Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo.c \
+ /home/andy/Documents/Embedded-Systems/FreeRTOS/FreeRTOS_Act/Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo.h \
  ../Core/Inc/stm32h7xx_nucleo_conf.h \
  ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal.h \
  ../Core/Inc/stm32h7xx_hal_conf.h \
@@ -37,8 +37,8 @@ Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo.o: \
  ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal_tim_ex.h \
  ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal_uart.h \
  ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal_uart_ex.h \
- /home/andy/STM32CubeIDE/workspace_1.19.0/FreeRTOS_Act/Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo_errno.h
-/home/andy/STM32CubeIDE/workspace_1.19.0/FreeRTOS_Act/Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo.h:
+ /home/andy/Documents/Embedded-Systems/FreeRTOS/FreeRTOS_Act/Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo_errno.h
+/home/andy/Documents/Embedded-Systems/FreeRTOS/FreeRTOS_Act/Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo.h:
 ../Core/Inc/stm32h7xx_nucleo_conf.h:
 ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal.h:
 ../Core/Inc/stm32h7xx_hal_conf.h:
@@ -75,4 +75,4 @@ Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo.o: \
 ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal_tim_ex.h:
 ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal_uart.h:
 ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal_uart_ex.h:
-/home/andy/STM32CubeIDE/workspace_1.19.0/FreeRTOS_Act/Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo_errno.h:
+/home/andy/Documents/Embedded-Systems/FreeRTOS/FreeRTOS_Act/Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo_errno.h:

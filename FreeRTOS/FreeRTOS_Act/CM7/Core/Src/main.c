@@ -295,27 +295,35 @@ void enviar_profiling_report(void)
 /**
  * @brief  Procesador de comandos
  */
+/**
+ * @brief  Procesador de comandos (VERSIÓN CORREGIDA)
+ */
+/**
+ * @brief  Procesador de comandos (VERSIÓN CORREGIDA)
+ */
 void procesar_comando(char *cmd)
 {
-    // Limpieza: Asegura que el string termine justo después del comando
-    // (Ej. convierte "STATUS\r\0" o "STATUS \0" a "STATUS\0")
-    for (int i = 0; cmd[i] != '\0'; i++)
-    {
-        // Si encontramos un espacio, un retorno de carro o un salto de línea,
-        // lo reemplazamos por el terminador nulo y paramos.
-        if (cmd[i] == ' ' || cmd[i] == '\r' || cmd[i] == '\n')
-        {
-            cmd[i] = '\0';
-            break;
-        }
-    }
     char msg[100];
-    snprintf(msg, sizeof(msg), "Comando recibido: [%s]\r\n", cmd);
-    HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-            osDelay(10);
 
-            if ((strcmp(cmd, "STATUS") == 0) || (strcmp(cmd, "status") == 0))
-               {
+    // Debug: mostrar comando recibido SIN LIMPIAR AÚN
+    snprintf(msg, sizeof(msg), "CMD RAW: [%s]\r\n", cmd);
+    HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+
+    // Limpieza: remover espacios, \r, \n al final
+    int len = strlen(cmd);
+    while (len > 0 && (cmd[len-1] == ' ' || cmd[len-1] == '\r' || cmd[len-1] == '\n'))
+    {
+        cmd[len-1] = '\0';
+        len--;
+    }
+
+    // Debug: mostrar comando limpio
+    snprintf(msg, sizeof(msg), "CMD CLEAN: [%s]\r\n", cmd);
+    HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+
+    // ========== STATUS ==========
+    if ((strcmp(cmd, "STATUS") == 0) || (strcmp(cmd, "status") == 0))
+    {
         osMutexAcquire(TempMutexHandle, osWaitForever);
 
         int temp_ent = (int)temperatura_actual;
@@ -330,25 +338,31 @@ void procesar_comando(char *cmd)
 
         osMutexRelease(TempMutexHandle);
 
+        // ✅ ENVIAR EL MENSAJE
+        HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
     }
-            else if ((strcmp(cmd, "PROF") == 0) || (strcmp(cmd, "prof") == 0))
-               {
+    // ========== PROF ==========
+    else if ((strcmp(cmd, "PROF") == 0) || (strcmp(cmd, "prof") == 0))
+    {
         enviar_profiling_report();
     }
+    // ========== AUTO ON ==========
     else if ((strncmp(cmd, "AUTO ON", 7) == 0) || (strncmp(cmd, "auto on", 7) == 0))
     {
         auto_status_enabled = true;
         snprintf(msg, sizeof(msg), "Auto status enabled (every 5s)\r\n");
         HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
     }
+    // ========== AUTO OFF ==========
     else if ((strncmp(cmd, "AUTO OFF", 8) == 0) || (strncmp(cmd, "auto off", 8) == 0))
     {
         auto_status_enabled = false;
         snprintf(msg, sizeof(msg), "Auto status disabled\r\n");
         HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
     }
-    else if ((strncmp(uart_cmd_buffer, "SET ", 4) == 0) || (strncmp(uart_cmd_buffer, "set ", 4) == 0))
-      {
+    // ========== SET ==========
+    else if ((strncmp(cmd, "SET ", 4) == 0) || (strncmp(cmd, "set ", 4) == 0))
+    {
         float nueva = atof(cmd + 4);
         temperatura_consigna = nueva;
 
@@ -358,25 +372,27 @@ void procesar_comando(char *cmd)
         snprintf(msg, sizeof(msg), "Nueva consigna: %d.%02d C\r\n", cons_ent, cons_dec);
         HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
     }
-    else if ((strncmp(cmd, "ON", 2) == 0) || (strncmp(cmd, "on", 2) == 0))
+    // ========== ON ==========
+    else if ((strcmp(cmd, "ON") == 0) || (strcmp(cmd, "on") == 0))
     {
         calefactor_on = true;
         snprintf(msg, sizeof(msg), "Heater turned on.\r\n");
         HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
     }
-    else if ((strncmp(cmd, "OFF", 3) == 0) || (strncmp(cmd, "off", 3) == 0))
+    // ========== OFF ==========
+    else if ((strcmp(cmd, "OFF") == 0) || (strcmp(cmd, "off") == 0))
     {
         calefactor_on = false;
         snprintf(msg, sizeof(msg), "Heater turned off.\r\n");
         HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
     }
+    // ========== COMANDO DESCONOCIDO ==========
     else
     {
         snprintf(msg, sizeof(msg), "Comandos: STATUS, SET xx, ON, OFF, PROF, AUTO ON, AUTO OFF\r\n");
         HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
     }
 }
-
 /* USER CODE END 0 */
 
 /**

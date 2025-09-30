@@ -1,5 +1,5 @@
 Middlewares/Third_Party/FreeRTOS/tasks.o: \
- /home/andy/STM32CubeIDE/workspace_1.19.0/FreeRTOS_Act/Middlewares/Third_Party/FreeRTOS/Source/tasks.c \
+ /home/andy/Documents/Embedded-Systems/FreeRTOS/FreeRTOS_Act/Middlewares/Third_Party/FreeRTOS/Source/tasks.c \
  ../../Middlewares/Third_Party/FreeRTOS/Source/include/FreeRTOS.h \
  ../Core/Inc/FreeRTOSConfig.h \
  ../../Middlewares/Third_Party/FreeRTOS/Source/include/projdefs.h \
