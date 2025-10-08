@@ -1,11 +1,3 @@
-/**
- * @file           : main.c                     // <- Nombre del archivo fuente.
- * @brief          : CAN Bit Banging BARE-METAL // <- De qué va: “bit-bang” de CAN sin periférico.
- *                   para STM32H745xx (Cortex-M7)
- * @author         : Gemini AI                  // <- Autor (informativo).
- * @attention      : Implementación completa de CAN Bit Banging para osciloscopio
- * usando acceso directo a registros del STM32H7. // <- Aviso: es para ver en osciloscopio.
- */
 
 #include <stdint.h>                              // <- Tipos enteros de tamaño fijo (uint8_t, uint16_t, etc.).
 
@@ -72,6 +64,32 @@ void CAN_SendBit(uint8_t state) {
    delay_cycles(BIT_TIME_CYCLES);       // <- Mantén ese nivel por el “tiempo de 1 bit”.
 }
 
+void CAN_SendBit_Stuffed(uint8_t state, int *stuff_count) {
+    // 1. Verificar Bit Stuffing antes de enviar el bit
+    if (state == DOMINANT) {
+        *stuff_count = 0; // Se rompe la secuencia de '1's recesivos.
+    } else { // state == RECESSIVE
+        // Si el bit es RECESSIVE (1), incrementamos el contador
+        (*stuff_count)++;
+    }
+
+    // 2. Enviar el bit real
+    if (state == RECESSIVE) {
+        GPIOA_BSRR = PA8_SET;
+    } else { // DOMINANT
+        GPIOA_BSRR = PA8_RESET;
+    }
+    delay_cycles(BIT_TIME_CYCLES);
+
+    // 3. Insertar el bit de relleno si es necesario
+    if (*stuff_count == 5) {
+        // Enviar el bit de relleno (de polaridad opuesta)
+        CAN_SendBit(DOMINANT);      // Insertar un '0' dominante (stuff bit)
+        *stuff_count = 0;           // Reiniciar el contador de secuencia
+    }
+}
+
+
 /**
  * @brief  Cálculo de CRC simplificado (para la visualización)
  */
@@ -89,47 +107,58 @@ uint16_t CAN_CalculateCRC(CAN_Frame_t *frame) {
  * @brief  Envía una trama CAN completa (simplificada sin Bit Stuffing)
  */
 void CAN_SendFrame(CAN_Frame_t *frame) {
-   int i, j;                            // <- Índices de bucle.
-   uint16_t crc;                        // <- Variable para el “CRC” simplificado.
+    int i, j;
+    uint16_t crc;
+    // Contador para el Bit Stuffing: lleva la cuenta de bits iguales consecutivos.
+    int stuff_count = 0;
 
-   // 1. INTERFRAME SPACE (3 bits recesivos)
-   for(i = 0; i < 3; i++) CAN_SendBit(RECESSIVE); // <- 3 bits de silencio antes de la trama.
+    // ** Bit Stuffing se aplica desde SOF hasta el final del CRC Field. **
 
-   // 2. START OF FRAME (SOF)
-   CAN_SendBit(DOMINANT);               // <- SOF: un 0 (dominante) marca inicio de trama.
+    // 1. INTERFRAME SPACE (3 bits recesivos)
+    // NOTA: El Bit Stuffing NO se aplica aquí.
+    for(i = 0; i < 3; i++) CAN_SendBit(RECESSIVE);
 
-   // 3. ARBITRATION FIELD (ID - 11 bits) - MSB primero
-   for(i = 10; i >= 0; i--)             // <- Recorre los 11 bits del ID, de MSB a LSB...
-       CAN_SendBit((frame->ID >> i) & 0x01); // <- Extrae ese bit y lo envía.
+    // 2. START OF FRAME (SOF)
+    CAN_SendBit(DOMINANT);               // SOF: un 0 (dominante).
 
-   // 4. CONTROL FIELD: RTR (1) | IDE (0) | r0 (0) | DLC (4 bits)
-   CAN_SendBit(RECESSIVE);              // <- RTR=1 (recesivo) → Data Frame (no remoto) en estándar.
-   CAN_SendBit(DOMINANT);               // <- IDE=0 (dominante) → formato estándar (11 bits).
-   CAN_SendBit(DOMINANT);               // <- r0=0 (reservado).
-   for(i = 3; i >= 0; i--)              // <- 4 bits del DLC, de MSB a LSB...
-       CAN_SendBit((frame->DLC >> i) & 0x01); // <- Envía cada bit del DLC.
+    // 3. ARBITRATION FIELD (ID - 11 bits)
+    for(i = 10; i >= 0; i--)
+        CAN_SendBit_Stuffed(((frame->ID >> i) & 0x01), &stuff_count);
 
-   // 5. DATA FIELD
-   for(i = 0; i < frame->DLC; i++) {    // <- Por cada byte de datos válido...
-       for(j = 7; j >= 0; j--)          // <- Recorre sus 8 bits, MSB a LSB...
-           CAN_SendBit((frame->Data[i] >> j) & 0x01); // <- Envía el bit del dato.
-   }
+    // 4. CONTROL FIELD: RTR (1) | IDE (0) | r0 (0) | DLC (4 bits)
+    // El Bit Stuffing también se aplica aquí.
+    CAN_SendBit_Stuffed(RECESSIVE, &stuff_count);   // RTR=1
+    CAN_SendBit_Stuffed(DOMINANT, &stuff_count);    // IDE=0
+    CAN_SendBit_Stuffed(DOMINANT, &stuff_count);    // r0=0
+    for(i = 3; i >= 0; i--)
+        CAN_SendBit_Stuffed(((frame->DLC >> i) & 0x01), &stuff_count);
 
-   // 6. CRC FIELD (15 bits)
-   crc = CAN_CalculateCRC(frame);       // <- Calcula “CRC” (simplificado).
-   for(i = 14; i >= 0; i--)             // <- 15 bits del “CRC”, MSB a LSB...
-       CAN_SendBit((crc >> i) & 0x01);  // <- Envía cada bit.
-   CAN_SendBit(RECESSIVE);              // <- CRC Delimiter = 1 (recesivo).
+    // 5. DATA FIELD
+    for(i = 0; i < frame->DLC; i++) {
+        for(j = 7; j >= 0; j--)
+            CAN_SendBit_Stuffed(((frame->Data[i] >> j) & 0x01), &stuff_count);
+    }
 
-   // 7. ACK FIELD
-   CAN_SendBit(RECESSIVE);              // <- ACK Slot: aquí queda 1 porque no hay receptor que tire a 0.
-   CAN_SendBit(RECESSIVE);              // <- ACK Delimiter = 1 (recesivo).
+    // 6. CRC FIELD (15 bits)
+    crc = CAN_CalculateCRC(frame);
+    for(i = 14; i >= 0; i--)
+        CAN_SendBit_Stuffed(((crc >> i) & 0x01), &stuff_count);
 
-   // 8. END OF FRAME (EOF) - 7 bits recesivos
-   for(i = 0; i < 7; i++)               // <- 7 bits de fin de trama...
-       CAN_SendBit(RECESSIVE);          // <- Todos en 1 (recesivo).
+    // FIN del Bit Stuffing.
+
+    // El resto de la trama NO lleva Bit Stuffing:
+
+    // 7. CRC Delimiter
+    CAN_SendBit(RECESSIVE);              // CRC Delimiter = 1.
+
+    // 8. ACK FIELD
+    CAN_SendBit(RECESSIVE);              // ACK Slot (se mantiene en 1 al no haber receptor).
+    CAN_SendBit(RECESSIVE);              // ACK Delimiter = 1.
+
+    // 9. END OF FRAME (EOF) - 7 bits recesivos
+    for(i = 0; i < 7; i++)
+        CAN_SendBit(RECESSIVE);
 }
-
 /**
  * @brief  Inicialización de Clock y GPIO para PA8 (H7 Bare-Metal).
  */
