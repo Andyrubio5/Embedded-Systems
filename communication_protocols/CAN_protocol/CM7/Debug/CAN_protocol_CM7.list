@@ -37,11 +37,11 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   CONTENTS, READONLY, DEBUGGING, OCTETS
  16 .debug_macro  00036feb  00000000  00000000  0000555f  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .debug_line   0000280a  00000000  00000000  0003c54a  2**0
+ 17 .debug_line   0000280b  00000000  00000000  0003c54a  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 18 .debug_str    001751ab  00000000  00000000  0003ed54  2**0
+ 18 .debug_str    001751ab  00000000  00000000  0003ed55  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .comment      00000043  00000000  00000000  001b3eff  2**0
+ 19 .comment      00000043  00000000  00000000  001b3f00  2**0
                   CONTENTS, READONLY
  20 .debug_frame  00000ad8  00000000  00000000  001b3f44  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
@@ -370,10 +370,10 @@ void ExitRun0Mode(void)
  8000460:	58024800 	.word	0x58024800
 
 08000464 <CAN_SendBit>:
-}                                       // <- Fin del retardo de N ciclos (aproximado).
 
 /**
- * @brief  Envía un bit individual al bus CAN
+ * Envía un solo bit por el pin PA8
+ * @param state: DOMINANT (0) o RECESSIVE (1)
  */
 void CAN_SendBit(uint8_t state) {
  8000464:	b480      	push	{r7}
@@ -381,31 +381,31 @@ void CAN_SendBit(uint8_t state) {
  8000468:	af00      	add	r7, sp, #0
  800046a:	4603      	mov	r3, r0
  800046c:	71fb      	strb	r3, [r7, #7]
-   if (state == RECESSIVE) {            // <- Si el bit deseado es recesivo (1 lógico)...
+   if (state == RECESSIVE) {
  800046e:	79fb      	ldrb	r3, [r7, #7]
  8000470:	2b01      	cmp	r3, #1
  8000472:	d104      	bne.n	800047e <CAN_SendBit+0x1a>
-       GPIOA_BSRR = PA8_SET;            // <- Escribe en BSRR parte baja: pone PA8 en 1 (alto).
+       GPIOA_BSRR = PA8_SET;    // Pone el pin en alto (1)
  8000474:	4b0b      	ldr	r3, [pc, #44]	@ (80004a4 <CAN_SendBit+0x40>)
  8000476:	f44f 7280 	mov.w	r2, #256	@ 0x100
  800047a:	601a      	str	r2, [r3, #0]
  800047c:	e003      	b.n	8000486 <CAN_SendBit+0x22>
-   } else {                             // <- Si el bit deseado es dominante (0 lógico)...
-       GPIOA_BSRR = PA8_RESET;          // <- Escribe en BSRR parte alta: pone PA8 en 0 (bajo).
+   } else {
+       GPIOA_BSRR = PA8_RESET;  // Pone el pin en bajo (0)
  800047e:	4b09      	ldr	r3, [pc, #36]	@ (80004a4 <CAN_SendBit+0x40>)
  8000480:	f04f 7280 	mov.w	r2, #16777216	@ 0x1000000
  8000484:	601a      	str	r2, [r3, #0]
  8000486:	f640 33b8 	movw	r3, #3000	@ 0xbb8
  800048a:	60fb      	str	r3, [r7, #12]
-   __asm volatile (                     // <- Bloque ensamblador en línea.
+   __asm volatile (
  800048c:	68fb      	ldr	r3, [r7, #12]
  800048e:	3b01      	subs	r3, #1
  8000490:	d1fd      	bne.n	800048e <CAN_SendBit+0x2a>
  8000492:	60fb      	str	r3, [r7, #12]
-}                                       // <- Fin del retardo de N ciclos (aproximado).
+}
  8000494:	bf00      	nop
    }
-   delay_cycles(BIT_TIME_CYCLES);       // <- Mantén ese nivel por el “tiempo de 1 bit”.
+   delay_cycles(BIT_TIME_CYCLES);  // Mantiene el nivel durante el tiempo de un bit
 }
  8000496:	bf00      	nop
  8000498:	3714      	adds	r7, #20
@@ -416,7 +416,11 @@ void CAN_SendBit(uint8_t state) {
  80004a4:	58020018 	.word	0x58020018
 
 080004a8 <CAN_SendBit_Stuffed>:
-
+ * Envía un bit aplicando la regla de "bit stuffing"
+ * Bit stuffing: si hay 5 bits iguales seguidos, se inserta uno contrario
+ * @param state: el bit a enviar (DOMINANT o RECESSIVE)
+ * @param stuff_count: contador de bits iguales consecutivos
+ */
 void CAN_SendBit_Stuffed(uint8_t state, int *stuff_count) {
  80004a8:	b580      	push	{r7, lr}
  80004aa:	b084      	sub	sp, #16
@@ -424,19 +428,18 @@ void CAN_SendBit_Stuffed(uint8_t state, int *stuff_count) {
  80004ae:	4603      	mov	r3, r0
  80004b0:	6039      	str	r1, [r7, #0]
  80004b2:	71fb      	strb	r3, [r7, #7]
-    // 1. Verificar Bit Stuffing antes de enviar el bit
+    // 1. Actualizar el contador de bits consecutivos
     if (state == DOMINANT) {
  80004b4:	79fb      	ldrb	r3, [r7, #7]
  80004b6:	2b00      	cmp	r3, #0
  80004b8:	d103      	bne.n	80004c2 <CAN_SendBit_Stuffed+0x1a>
-        *stuff_count = 0; // Se rompe la secuencia de '1's recesivos.
+        *stuff_count = 0;  // Si enviamos un 0, reiniciamos el contador
  80004ba:	683b      	ldr	r3, [r7, #0]
  80004bc:	2200      	movs	r2, #0
  80004be:	601a      	str	r2, [r3, #0]
  80004c0:	e004      	b.n	80004cc <CAN_SendBit_Stuffed+0x24>
-    } else { // state == RECESSIVE
-        // Si el bit es RECESSIVE (1), incrementamos el contador
-        (*stuff_count)++;
+    } else {
+        (*stuff_count)++;  // Si enviamos un 1, aumentamos el contador
  80004c2:	683b      	ldr	r3, [r7, #0]
  80004c4:	681b      	ldr	r3, [r3, #0]
  80004c6:	1c5a      	adds	r2, r3, #1
@@ -444,7 +447,7 @@ void CAN_SendBit_Stuffed(uint8_t state, int *stuff_count) {
  80004ca:	601a      	str	r2, [r3, #0]
     }
 
-    // 2. Enviar el bit real
+    // 2. Enviar el bit solicitado
     if (state == RECESSIVE) {
  80004cc:	79fb      	ldrb	r3, [r7, #7]
  80004ce:	2b01      	cmp	r3, #1
@@ -454,34 +457,33 @@ void CAN_SendBit_Stuffed(uint8_t state, int *stuff_count) {
  80004d4:	f44f 7280 	mov.w	r2, #256	@ 0x100
  80004d8:	601a      	str	r2, [r3, #0]
  80004da:	e003      	b.n	80004e4 <CAN_SendBit_Stuffed+0x3c>
-    } else { // DOMINANT
+    } else {
         GPIOA_BSRR = PA8_RESET;
  80004dc:	4b0c      	ldr	r3, [pc, #48]	@ (8000510 <CAN_SendBit_Stuffed+0x68>)
  80004de:	f04f 7280 	mov.w	r2, #16777216	@ 0x1000000
  80004e2:	601a      	str	r2, [r3, #0]
  80004e4:	f640 33b8 	movw	r3, #3000	@ 0xbb8
  80004e8:	60fb      	str	r3, [r7, #12]
-   __asm volatile (                     // <- Bloque ensamblador en línea.
+   __asm volatile (
  80004ea:	68fb      	ldr	r3, [r7, #12]
  80004ec:	3b01      	subs	r3, #1
  80004ee:	d1fd      	bne.n	80004ec <CAN_SendBit_Stuffed+0x44>
  80004f0:	60fb      	str	r3, [r7, #12]
-}                                       // <- Fin del retardo de N ciclos (aproximado).
+}
  80004f2:	bf00      	nop
     }
     delay_cycles(BIT_TIME_CYCLES);
 
-    // 3. Insertar el bit de relleno si es necesario
+    // 3. Si llevamos 5 bits iguales, insertar un bit de relleno
     if (*stuff_count == 5) {
  80004f4:	683b      	ldr	r3, [r7, #0]
  80004f6:	681b      	ldr	r3, [r3, #0]
  80004f8:	2b05      	cmp	r3, #5
  80004fa:	d105      	bne.n	8000508 <CAN_SendBit_Stuffed+0x60>
-        // Enviar el bit de relleno (de polaridad opuesta)
-        CAN_SendBit(DOMINANT);      // Insertar un '0' dominante (stuff bit)
+        CAN_SendBit(DOMINANT);  // Insertamos un 0 para romper la secuencia
  80004fc:	2000      	movs	r0, #0
  80004fe:	f7ff ffb1 	bl	8000464 <CAN_SendBit>
-        *stuff_count = 0;           // Reiniciar el contador de secuencia
+        *stuff_count = 0;       // Reiniciamos el contador
  8000502:	683b      	ldr	r3, [r7, #0]
  8000504:	2200      	movs	r2, #0
  8000506:	601a      	str	r2, [r3, #0]
@@ -494,25 +496,25 @@ void CAN_SendBit_Stuffed(uint8_t state, int *stuff_count) {
  8000510:	58020018 	.word	0x58020018
 
 08000514 <CAN_CalculateCRC>:
-
-
 /**
- * @brief  Cálculo de CRC simplificado (para la visualización)
+ * Calcula un CRC simplificado (no es el CRC real de CAN, solo para demostración)
+ * @param frame: puntero a la trama CAN
+ * @return: un valor de 15 bits que simula el CRC
  */
 uint16_t CAN_CalculateCRC(CAN_Frame_t *frame) {
  8000514:	b480      	push	{r7}
  8000516:	b085      	sub	sp, #20
  8000518:	af00      	add	r7, sp, #0
  800051a:	6078      	str	r0, [r7, #4]
-   uint16_t crc = 0;                    // <- Acumulador del “CRC” (aquí no es el real de CAN).
+   uint16_t crc = 0;
  800051c:	2300      	movs	r3, #0
  800051e:	81fb      	strh	r3, [r7, #14]
-   // Suma simple de los datos para generar un valor determinístico
-   for(int i = 0; i < frame->DLC; i++) {// <- Recorre sólo los bytes válidos (DLC).
+   // Suma todos los bytes de datos
+   for(int i = 0; i < frame->DLC; i++) {
  8000520:	2300      	movs	r3, #0
  8000522:	60bb      	str	r3, [r7, #8]
  8000524:	e00b      	b.n	800053e <CAN_CalculateCRC+0x2a>
-       crc += frame->Data[i];           // <- Suma cada byte al acumulador.
+       crc += frame->Data[i];
  8000526:	687a      	ldr	r2, [r7, #4]
  8000528:	68bb      	ldr	r3, [r7, #8]
  800052a:	4413      	add	r3, r2
@@ -522,7 +524,7 @@ uint16_t CAN_CalculateCRC(CAN_Frame_t *frame) {
  8000532:	89fb      	ldrh	r3, [r7, #14]
  8000534:	4413      	add	r3, r2
  8000536:	81fb      	strh	r3, [r7, #14]
-   for(int i = 0; i < frame->DLC; i++) {// <- Recorre sólo los bytes válidos (DLC).
+   for(int i = 0; i < frame->DLC; i++) {
  8000538:	68bb      	ldr	r3, [r7, #8]
  800053a:	3301      	adds	r3, #1
  800053c:	60bb      	str	r3, [r7, #8]
@@ -533,8 +535,7 @@ uint16_t CAN_CalculateCRC(CAN_Frame_t *frame) {
  8000546:	4293      	cmp	r3, r2
  8000548:	dbed      	blt.n	8000526 <CAN_CalculateCRC+0x12>
    }
-   // Tomar 15 bits
-   return crc & 0x7FFF;                 // <- Devuelve sólo 15 bits (formato parecido al CRC de CAN).
+   return crc & 0x7FFF;  // Solo usa 15 bits (como el CRC real de CAN)
  800054a:	89fb      	ldrh	r3, [r7, #14]
  800054c:	f3c3 030e 	ubfx	r3, r3, #0, #15
  8000550:	b29b      	uxth	r3, r3
@@ -548,7 +549,8 @@ uint16_t CAN_CalculateCRC(CAN_Frame_t *frame) {
 0800055e <CAN_SendFrame>:
 
 /**
- * @brief  Envía una trama CAN completa (simplificada sin Bit Stuffing)
+ * Envía una trama CAN completa siguiendo el formato estándar
+ * @param frame: puntero a la trama que se va a enviar
  */
 void CAN_SendFrame(CAN_Frame_t *frame) {
  800055e:	b580      	push	{r7, lr}
@@ -557,15 +559,14 @@ void CAN_SendFrame(CAN_Frame_t *frame) {
  8000564:	6078      	str	r0, [r7, #4]
     int i, j;
     uint16_t crc;
-    // Contador para el Bit Stuffing: lleva la cuenta de bits iguales consecutivos.
-    int stuff_count = 0;
+    int stuff_count = 0;  // Contador para el bit stuffing
  8000566:	2300      	movs	r3, #0
  8000568:	60bb      	str	r3, [r7, #8]
 
-    // ** Bit Stuffing se aplica desde SOF hasta el final del CRC Field. **
-
-    // 1. INTERFRAME SPACE (3 bits recesivos)
-    // NOTA: El Bit Stuffing NO se aplica aquí.
+    // -----------------------------------------------
+    // 1. INTERFRAME SPACE (espacio entre tramas)
+    // -----------------------------------------------
+    // 3 bits en alto (recesivos) para separar tramas
     for(i = 0; i < 3; i++) CAN_SendBit(RECESSIVE);
  800056a:	2300      	movs	r3, #0
  800056c:	617b      	str	r3, [r7, #20]
@@ -579,12 +580,18 @@ void CAN_SendFrame(CAN_Frame_t *frame) {
  800057e:	2b02      	cmp	r3, #2
  8000580:	ddf6      	ble.n	8000570 <CAN_SendFrame+0x12>
 
-    // 2. START OF FRAME (SOF)
-    CAN_SendBit(DOMINANT);               // SOF: un 0 (dominante).
+    // -----------------------------------------------
+    // 2. START OF FRAME (inicio de trama)
+    // -----------------------------------------------
+    // Un bit dominante (0) marca el inicio
+    CAN_SendBit(DOMINANT);
  8000582:	2000      	movs	r0, #0
  8000584:	f7ff ff6e 	bl	8000464 <CAN_SendBit>
 
-    // 3. ARBITRATION FIELD (ID - 11 bits)
+    // -----------------------------------------------
+    // 3. ARBITRATION FIELD (identificador)
+    // -----------------------------------------------
+    // Envía los 11 bits del ID, del más significativo al menos significativo
     for(i = 10; i >= 0; i--)
  8000588:	230a      	movs	r3, #10
  800058a:	617b      	str	r3, [r7, #20]
@@ -610,23 +617,26 @@ void CAN_SendFrame(CAN_Frame_t *frame) {
  80005b6:	2b00      	cmp	r3, #0
  80005b8:	dae9      	bge.n	800058e <CAN_SendFrame+0x30>
 
-    // 4. CONTROL FIELD: RTR (1) | IDE (0) | r0 (0) | DLC (4 bits)
-    // El Bit Stuffing también se aplica aquí.
-    CAN_SendBit_Stuffed(RECESSIVE, &stuff_count);   // RTR=1
+    // -----------------------------------------------
+    // 4. CONTROL FIELD (información de control)
+    // -----------------------------------------------
+    CAN_SendBit_Stuffed(RECESSIVE, &stuff_count);  // RTR=1 (trama de datos)
  80005ba:	f107 0308 	add.w	r3, r7, #8
  80005be:	4619      	mov	r1, r3
  80005c0:	2001      	movs	r0, #1
  80005c2:	f7ff ff71 	bl	80004a8 <CAN_SendBit_Stuffed>
-    CAN_SendBit_Stuffed(DOMINANT, &stuff_count);    // IDE=0
+    CAN_SendBit_Stuffed(DOMINANT, &stuff_count);   // IDE=0 (ID estándar de 11 bits)
  80005c6:	f107 0308 	add.w	r3, r7, #8
  80005ca:	4619      	mov	r1, r3
  80005cc:	2000      	movs	r0, #0
  80005ce:	f7ff ff6b 	bl	80004a8 <CAN_SendBit_Stuffed>
-    CAN_SendBit_Stuffed(DOMINANT, &stuff_count);    // r0=0
+    CAN_SendBit_Stuffed(DOMINANT, &stuff_count);   // r0=0 (bit reservado)
  80005d2:	f107 0308 	add.w	r3, r7, #8
  80005d6:	4619      	mov	r1, r3
  80005d8:	2000      	movs	r0, #0
  80005da:	f7ff ff65 	bl	80004a8 <CAN_SendBit_Stuffed>
+
+    // Envía el DLC (cantidad de bytes de datos)
     for(i = 3; i >= 0; i--)
  80005de:	2303      	movs	r3, #3
  80005e0:	617b      	str	r3, [r7, #20]
@@ -652,7 +662,10 @@ void CAN_SendFrame(CAN_Frame_t *frame) {
  800060c:	2b00      	cmp	r3, #0
  800060e:	dae9      	bge.n	80005e4 <CAN_SendFrame+0x86>
 
-    // 5. DATA FIELD
+    // -----------------------------------------------
+    // 5. DATA FIELD (los datos)
+    // -----------------------------------------------
+    // Envía cada byte de datos, bit por bit
     for(i = 0; i < frame->DLC; i++) {
  8000610:	2300      	movs	r3, #0
  8000612:	617b      	str	r3, [r7, #20]
@@ -694,9 +707,11 @@ void CAN_SendFrame(CAN_Frame_t *frame) {
  800065a:	697b      	ldr	r3, [r7, #20]
  800065c:	4293      	cmp	r3, r2
  800065e:	dbda      	blt.n	8000616 <CAN_SendFrame+0xb8>
-    }
 
-    // 6. CRC FIELD (15 bits)
+    // -----------------------------------------------
+    // 6. CRC FIELD (verificación de errores)
+    // -----------------------------------------------
+    // Calcula y envía el CRC de 15 bits
     crc = CAN_CalculateCRC(frame);
  8000660:	6878      	ldr	r0, [r7, #4]
  8000662:	f7ff ff57 	bl	8000514 <CAN_CalculateCRC>
@@ -724,24 +739,29 @@ void CAN_SendFrame(CAN_Frame_t *frame) {
  8000692:	697b      	ldr	r3, [r7, #20]
  8000694:	2b00      	cmp	r3, #0
  8000696:	daeb      	bge.n	8000670 <CAN_SendFrame+0x112>
-    // FIN del Bit Stuffing.
+    // NOTA: A partir de aquí ya NO se aplica bit stuffing
 
-    // El resto de la trama NO lleva Bit Stuffing:
-
-    // 7. CRC Delimiter
-    CAN_SendBit(RECESSIVE);              // CRC Delimiter = 1.
+    // -----------------------------------------------
+    // 7. CRC DELIMITER (separador del CRC)
+    // -----------------------------------------------
+    CAN_SendBit(RECESSIVE);  // Siempre es 1
  8000698:	2001      	movs	r0, #1
  800069a:	f7ff fee3 	bl	8000464 <CAN_SendBit>
 
-    // 8. ACK FIELD
-    CAN_SendBit(RECESSIVE);              // ACK Slot (se mantiene en 1 al no haber receptor).
+    // -----------------------------------------------
+    // 8. ACK FIELD (confirmación)
+    // -----------------------------------------------
+    CAN_SendBit(RECESSIVE);  // ACK Slot (el receptor lo pondría en 0)
  800069e:	2001      	movs	r0, #1
  80006a0:	f7ff fee0 	bl	8000464 <CAN_SendBit>
-    CAN_SendBit(RECESSIVE);              // ACK Delimiter = 1.
+    CAN_SendBit(RECESSIVE);  // ACK Delimiter (siempre 1)
  80006a4:	2001      	movs	r0, #1
  80006a6:	f7ff fedd 	bl	8000464 <CAN_SendBit>
 
-    // 9. END OF FRAME (EOF) - 7 bits recesivos
+    // -----------------------------------------------
+    // 9. END OF FRAME (fin de trama)
+    // -----------------------------------------------
+    // 7 bits recesivos (en alto) marcan el final
     for(i = 0; i < 7; i++)
  80006aa:	2300      	movs	r3, #0
  80006ac:	617b      	str	r3, [r7, #20]
@@ -764,52 +784,51 @@ void CAN_SendFrame(CAN_Frame_t *frame) {
  80006ca:	bd80      	pop	{r7, pc}
 
 080006cc <init_bare_metal>:
+
 /**
- * @brief  Inicialización de Clock y GPIO para PA8 (H7 Bare-Metal).
+ * Inicializa el microcontrolador para usar el pin PA8 como salida
  */
 static void init_bare_metal(void) {
  80006cc:	b480      	push	{r7}
  80006ce:	af00      	add	r7, sp, #0
-    // 1. Habilitar el Clock para GPIOA
-    RCC_AHB4ENR |= GPIOAEN;             // <- Enciende el reloj del puerto A (sin esto, GPIOA no responde).
+    // 1. Encender el reloj del puerto A (sin esto el puerto no funciona)
+    RCC_AHB4ENR |= GPIOAEN;
  80006d0:	4b13      	ldr	r3, [pc, #76]	@ (8000720 <init_bare_metal+0x54>)
  80006d2:	681b      	ldr	r3, [r3, #0]
  80006d4:	4a12      	ldr	r2, [pc, #72]	@ (8000720 <init_bare_metal+0x54>)
  80006d6:	f043 0301 	orr.w	r3, r3, #1
  80006da:	6013      	str	r3, [r2, #0]
 
-    // 2. Configurar PA8 como Salida Push-Pull de alta velocidad
-    // Limpiar MODER (bits 16 y 17) para PA8
-    GPIOA_MODER &= ~(0x3 << (CAN_TX_PIN_N * 2)); // <- Borra los 2 bits de modo del pin 8.
+    // 2. Configurar PA8 como salida digital
+    GPIOA_MODER &= ~(0x3 << (CAN_TX_PIN_N * 2));  // Limpia la configuración anterior
  80006dc:	4b11      	ldr	r3, [pc, #68]	@ (8000724 <init_bare_metal+0x58>)
  80006de:	681b      	ldr	r3, [r3, #0]
  80006e0:	4a10      	ldr	r2, [pc, #64]	@ (8000724 <init_bare_metal+0x58>)
  80006e2:	f423 3340 	bic.w	r3, r3, #196608	@ 0x30000
  80006e6:	6013      	str	r3, [r2, #0]
-    // Escribir 0b01 (Output Mode)
-    GPIOA_MODER |= (0x1 << (CAN_TX_PIN_N * 2));  // <- Pone modo “salida” en PA8.
+    GPIOA_MODER |= (0x1 << (CAN_TX_PIN_N * 2));   // Lo pone en modo salida
  80006e8:	4b0e      	ldr	r3, [pc, #56]	@ (8000724 <init_bare_metal+0x58>)
  80006ea:	681b      	ldr	r3, [r3, #0]
  80006ec:	4a0d      	ldr	r2, [pc, #52]	@ (8000724 <init_bare_metal+0x58>)
  80006ee:	f443 3380 	orr.w	r3, r3, #65536	@ 0x10000
  80006f2:	6013      	str	r3, [r2, #0]
 
-    // Configurar OSPEEDR (bits 16 y 17) a "Very High Speed" (0b11)
-    GPIOA_OSPEEDR &= ~(0x3 << (CAN_TX_PIN_N * 2)); // <- Limpia velocidad previa de PA8.
+    // 3. Configurar PA8 para velocidad muy alta (bordes limpios y rápidos)
+    GPIOA_OSPEEDR &= ~(0x3 << (CAN_TX_PIN_N * 2));
  80006f4:	4b0c      	ldr	r3, [pc, #48]	@ (8000728 <init_bare_metal+0x5c>)
  80006f6:	681b      	ldr	r3, [r3, #0]
  80006f8:	4a0b      	ldr	r2, [pc, #44]	@ (8000728 <init_bare_metal+0x5c>)
  80006fa:	f423 3340 	bic.w	r3, r3, #196608	@ 0x30000
  80006fe:	6013      	str	r3, [r2, #0]
-    GPIOA_OSPEEDR |= (0x3 << (CAN_TX_PIN_N * 2));  // <- Fija “muy alta velocidad” para bordes limpios.
+    GPIOA_OSPEEDR |= (0x3 << (CAN_TX_PIN_N * 2));
  8000700:	4b09      	ldr	r3, [pc, #36]	@ (8000728 <init_bare_metal+0x5c>)
  8000702:	681b      	ldr	r3, [r3, #0]
  8000704:	4a08      	ldr	r2, [pc, #32]	@ (8000728 <init_bare_metal+0x5c>)
  8000706:	f443 3340 	orr.w	r3, r3, #196608	@ 0x30000
  800070a:	6013      	str	r3, [r2, #0]
 
-    // 3. Poner el pin inicial en RECESSIVE (HIGH)
-    GPIOA_BSRR = PA8_SET;               // <- Arranca con la línea en 1 (bus en reposo = recesivo).
+    // 4. Poner el pin en alto (estado de reposo del bus CAN)
+    GPIOA_BSRR = PA8_SET;
  800070c:	4b07      	ldr	r3, [pc, #28]	@ (800072c <init_bare_metal+0x60>)
  800070e:	f44f 7280 	mov.w	r2, #256	@ 0x100
  8000712:	601a      	str	r2, [r3, #0]
@@ -826,42 +845,43 @@ static void init_bare_metal(void) {
 
 08000730 <main>:
 
-// ----------------------------------------------------------------------------
-// 3. BUCLE PRINCIPAL
-// ----------------------------------------------------------------------------
+// ============================================================================
+// PROGRAMA PRINCIPAL
+// ============================================================================
 
 int main(void) {
  8000730:	b580      	push	{r7, lr}
  8000732:	b084      	sub	sp, #16
  8000734:	af00      	add	r7, sp, #0
-    init_bare_metal();                  // <- Configura reloj de GPIOA y PA8 como salida rápida en alto.
+    // Configurar el microcontrolador
+    init_bare_metal();
  8000736:	f7ff ffc9 	bl	80006cc <init_bare_metal>
 
-    // Configurar trama CAN de ejemplo
-    CAN_Frame_t tx_frame = {            // <- Crea una trama de ejemplo:
+    // Crear una trama de ejemplo para enviar
+    CAN_Frame_t tx_frame = {
  800073a:	4a09      	ldr	r2, [pc, #36]	@ (8000760 <main+0x30>)
  800073c:	463b      	mov	r3, r7
  800073e:	ca07      	ldmia	r2, {r0, r1, r2}
  8000740:	e883 0007 	stmia.w	r3, {r0, r1, r2}
-        .Data = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88} // <- El payload.
+        .Data = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88}  // Los datos
     };
 
-    while (1) {                         // <- Bucle infinito.
-        // Enviar la trama
-        CAN_SendFrame(&tx_frame);       // <- Envía la trama completa bit a bit por PA8.
+    // Bucle infinito: enviar tramas continuamente
+    while (1) {
+        CAN_SendFrame(&tx_frame);         // Envía la trama completa
  8000744:	463b      	mov	r3, r7
  8000746:	4618      	mov	r0, r3
  8000748:	f7ff ff09 	bl	800055e <CAN_SendFrame>
  800074c:	4b05      	ldr	r3, [pc, #20]	@ (8000764 <main+0x34>)
  800074e:	60fb      	str	r3, [r7, #12]
-   __asm volatile (                     // <- Bloque ensamblador en línea.
+   __asm volatile (
  8000750:	68fb      	ldr	r3, [r7, #12]
  8000752:	3b01      	subs	r3, #1
  8000754:	d1fd      	bne.n	8000752 <main+0x22>
  8000756:	60fb      	str	r3, [r7, #12]
-}                                       // <- Fin del retardo de N ciclos (aproximado).
+}
  8000758:	bf00      	nop
-        CAN_SendFrame(&tx_frame);       // <- Envía la trama completa bit a bit por PA8.
+        CAN_SendFrame(&tx_frame);         // Envía la trama completa
  800075a:	bf00      	nop
  800075c:	e7f2      	b.n	8000744 <main+0x14>
  800075e:	bf00      	nop
