@@ -620,10 +620,10 @@ void CAN_SendFrame(CAN_Frame_t *frame) {
     // -----------------------------------------------
     // 4. CONTROL FIELD (información de control)
     // -----------------------------------------------
-    CAN_SendBit_Stuffed(RECESSIVE, &stuff_count);  // RTR=1 (trama de datos)
+    CAN_SendBit_Stuffed(DOMINANT, &stuff_count);  // RTR=1 (trama de datos)
  80005ba:	f107 0308 	add.w	r3, r7, #8
  80005be:	4619      	mov	r1, r3
- 80005c0:	2001      	movs	r0, #1
+ 80005c0:	2000      	movs	r0, #0
  80005c2:	f7ff ff71 	bl	80004a8 <CAN_SendBit_Stuffed>
     CAN_SendBit_Stuffed(DOMINANT, &stuff_count);   // IDE=0 (ID estándar de 11 bits)
  80005c6:	f107 0308 	add.w	r3, r7, #8
