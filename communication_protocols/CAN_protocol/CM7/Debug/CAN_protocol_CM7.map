@@ -141,6 +141,21 @@ Discarded input sections
  .debug_macro   0x00000000      0x103 ./Core/Src/main.o
  .debug_macro   0x00000000       0x6a ./Core/Src/main.o
  .debug_macro   0x00000000      0x1df ./Core/Src/main.o
+ .group         0x00000000        0xc ./Core/Src/main_perifericos.o
+ .text          0x00000000        0x0 ./Core/Src/main_perifericos.o
+ .data          0x00000000        0x0 ./Core/Src/main_perifericos.o
+ .bss           0x00000000        0x0 ./Core/Src/main_perifericos.o
+ .debug_info    0x00000000       0x22 ./Core/Src/main_perifericos.o
+ .debug_abbrev  0x00000000       0x12 ./Core/Src/main_perifericos.o
+ .debug_aranges
+                0x00000000       0x18 ./Core/Src/main_perifericos.o
+ .debug_macro   0x00000000       0x11 ./Core/Src/main_perifericos.o
+ .debug_macro   0x00000000      0xafc ./Core/Src/main_perifericos.o
+ .debug_line    0x00000000       0x3f ./Core/Src/main_perifericos.o
+ .debug_str     0x00000000     0x2f0b ./Core/Src/main_perifericos.o
+ .comment       0x00000000       0x44 ./Core/Src/main_perifericos.o
+ .ARM.attributes
+                0x00000000       0x32 ./Core/Src/main_perifericos.o
  .group         0x00000000        0xc ./Core/Src/stm32h7xx_hal_msp.o
  .group         0x00000000        0xc ./Core/Src/stm32h7xx_hal_msp.o
  .group         0x00000000        0xc ./Core/Src/stm32h7xx_hal_msp.o
@@ -4093,6 +4108,7 @@ LOAD /opt/st/stm32cubeide_1.19.0/plugins/com.st.stm32cube.ide.mcu.externaltools.
 LOAD /opt/st/stm32cubeide_1.19.0/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.linux64_1.0.0.202410170706/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/lib/thumb/v7e-m+dp/hard/crt0.o
 LOAD ./Common/Src/system_stm32h7xx_dualcore_boot_cm4_cm7.o
 LOAD ./Core/Src/main.o
+LOAD ./Core/Src/main_perifericos.o
 LOAD ./Core/Src/stm32h7xx_hal_msp.o
 LOAD ./Core/Src/stm32h7xx_it.o
 LOAD ./Core/Src/syscalls.o

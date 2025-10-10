@@ -139,7 +139,7 @@ void CAN_SendFrame(CAN_Frame_t *frame) {
     // -----------------------------------------------
     // 4. CONTROL FIELD (información de control)
     // -----------------------------------------------
-    CAN_SendBit_Stuffed(DOMINANT, &stuff_count);  // RTR=1 (trama de datos)
+    CAN_SendBit_Stuffed(DOMINANT, &stuff_count);  // RTR=0 (trama de datos)
     CAN_SendBit_Stuffed(DOMINANT, &stuff_count);   // IDE=0 (ID estándar de 11 bits)
     CAN_SendBit_Stuffed(DOMINANT, &stuff_count);   // r0=0 (bit reservado)
 
