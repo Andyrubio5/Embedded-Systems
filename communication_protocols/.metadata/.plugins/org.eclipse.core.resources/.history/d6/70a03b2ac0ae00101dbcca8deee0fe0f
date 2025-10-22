@@ -1,0 +1,43 @@
+/* Prueba UART SUPER SIMPLE - Solo transmisión
+ * Reemplaza SOLO la sección USER CODE BEGIN 2 y USER CODE BEGIN 3
+ * en tu main.c actual
+ */
+
+// ==== REEMPLAZA ESTA PARTE EN "USER CODE BEGIN 2" ====
+/* USER CODE BEGIN 2 */
+
+// Esperar 1 segundo
+HAL_Delay(1000);
+
+// Transmitir caracteres individuales uno por uno
+uint8_t test1 = 'H';
+uint8_t test2 = 'O';
+uint8_t test3 = 'L';
+uint8_t test4 = 'A';
+uint8_t test5 = '\r';
+uint8_t test6 = '\n';
+
+HAL_UART_Transmit(&huart3, &test1, 1, 1000);
+HAL_Delay(100);
+HAL_UART_Transmit(&huart3, &test2, 1, 1000);
+HAL_Delay(100);
+HAL_UART_Transmit(&huart3, &test3, 1, 1000);
+HAL_Delay(100);
+HAL_UART_Transmit(&huart3, &test4, 1, 1000);
+HAL_Delay(100);
+HAL_UART_Transmit(&huart3, &test5, 1, 1000);
+HAL_Delay(100);
+HAL_UART_Transmit(&huart3, &test6, 1, 1000);
+
+/* USER CODE END 2 */
+
+
+// ==== REEMPLAZA ESTA PARTE EN "USER CODE BEGIN 3" (dentro del while) ====
+/* USER CODE BEGIN 3 */
+
+// Transmitir "X" cada segundo
+static uint8_t x_char = 'X';
+HAL_UART_Transmit(&huart3, &x_char, 1, 1000);
+HAL_Delay(1000);
+
+/* USER CODE END 3 */

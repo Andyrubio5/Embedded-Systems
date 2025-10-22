@@ -1,0 +1,179 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body (BIDIRECCIONAL: TX y RX con ECO)
+  ******************************************************************************
+  * @attention
+  *
+  * NOTA: Este código asume que el USART3 está configurado en los pines PB10 (TX) y PB11 (RX)
+  * y que se está utilizando un conversor USB-TTL conectado a estos pines.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include <stdio.h>
+#include <string.h>
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+
+// Redirección de printf a SWV/SWO (Debug con ST-Link)
+int _write(int file, char *ptr, int len) {
+    for(int i = 0; i < len; i++) {
+        ITM_SendChar((*ptr++));
+    }
+    return len;
+}
+/* USER CODE END Includes */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+#define RX_BUFFER_SIZE 128
+#define RX_TIMEOUT_MS  1000  // Timeout de 1 segundo sin datos
+/* USER CODE END PD */
+
+/* Private variables ---------------------------------------------------------*/
+UART_HandleTypeDef huart3;
+
+/* USER CODE BEGIN PV */
+static uint32_t my_tx_counter = 0;
+static uint32_t last_tx_time = 0;
+
+uint8_t rx_buffer[RX_BUFFER_SIZE];
+uint8_t rx_data;
+volatile uint8_t rx_index = 0;
+volatile uint8_t rx_complete = 0;
+volatile uint32_t last_rx_time = 0;
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_USART3_UART_Init(void);
+/* USER CODE BEGIN PFP */
+void UART_SendString(char *str);
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
+void UART_SendString(char *str) {
+    HAL_UART_Transmit(&huart3, (uint8_t*)str, strlen(str), HAL_MAX_DELAY);
+}
+
+// Callback de recepción completa - VERSIÓN MEJORADA
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART3) {
+        last_rx_time = HAL_GetTick(); // Reinicia el tiempo de espera (timeout)
+
+        // 1. Manejar el fin de mensaje (\r o \n)
+        if (rx_data == '\r' || rx_data == '\n') {
+            if (rx_index > 0 && !rx_complete) {
+                rx_buffer[rx_index] = '\0'; // Terminador nulo
+                rx_complete = 1;
+            }
+        }
+        // 2. Almacenar datos
+        else {
+            if (rx_index < RX_BUFFER_SIZE - 1) {
+                rx_buffer[rx_index++] = rx_data;
+            } else {
+                // Buffer lleno
+                rx_buffer[RX_BUFFER_SIZE - 1] = '\0';
+                rx_complete = 1;
+                printf("ADVERTENCIA: Buffer RX lleno!\r\n");
+            }
+        }
+
+        // Continuar recibiendo el siguiente byte
+        HAL_UART_Receive_IT(&huart3, &rx_data, 1);
+    }
+}
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+  /* MCU Configuration--------------------------------------------------------*/
+  HAL_Init();
+  SystemClock_Config(); // Asegúrate de que esta función esté definida
+
+  /* Inicializar periféricos */
+  MX_GPIO_Init();
+  MX_USART3_UART_Init();
+
+  /* USER CODE BEGIN 2 */
+  UART_SendString("\r\n--- STM32 UART Eco Bidireccional v3.0 ---\r\n");
+  UART_SendString("Conectado a USB-TTL. Envia texto y recibiras un eco.\r\n");
+  printf("Sistema listo. TX periodico y RX con eco habilitado.\r\n");
+
+  // Iniciar la recepción por interrupción (recibe 1 byte a la vez)
+  HAL_UART_Receive_IT(&huart3, &rx_data, 1);
+  last_tx_time = HAL_GetTick();
+  last_rx_time = HAL_GetTick();
+
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+
+    // PARTE 1: LÓGICA DE TRANSMISIÓN PERIÓDICA (TX)
+    if (HAL_GetTick() - last_tx_time >= 1500) // Transmite cada 1.5 segundos
+    {
+        char tx_buffer_msg[64];
+
+        // Mensaje para el terminal
+        sprintf(tx_buffer_msg, "MSG propio: %lu\r\n", my_tx_counter++);
+        UART_SendString(tx_buffer_msg);
+
+        // Debug propio (visible solo en ST-Link/SWV)
+        printf("TX Enviado: %s", tx_buffer_msg);
+
+        last_tx_time = HAL_GetTick();
+    }
+
+    // PARTE 2: LÓGICA DE RECEPCIÓN Y ECO (RX)
+    // Se activa cuando rx_complete es 1 (llegó \r o \n o buffer lleno o timeout)
+    if (rx_complete) {
+        rx_complete = 0;
+
+        // Debug: Imprime lo que se recibió (visible en SWV)
+        printf("RX recibido: [%s] (longitud=%d bytes)\r\n", rx_buffer, rx_index);
+
+        // Eco: Reenviar el mensaje recibido con un prefijo
+        UART_SendString("--> ECO: ");
+        HAL_UART_Transmit(&huart3, rx_buffer, rx_index, HAL_MAX_DELAY);
+        UART_SendString("\r\n");
+
+        // Resetear buffer para la siguiente recepción
+        rx_index = 0;
+        memset(rx_buffer, 0, RX_BUFFER_SIZE);
+    }
+
+    // PARTE 3: TIMEOUT DE RECEPCIÓN
+    // Si hay datos en el buffer (rx_index > 0) pero no se ha completado (rx_complete = 0)
+    // y ha pasado mucho tiempo desde el último byte recibido, se fuerza la finalización.
+    if (rx_index > 0 && !rx_complete) {
+        if (HAL_GetTick() - last_rx_time >= RX_TIMEOUT_MS) {
+            rx_buffer[rx_index] = '\0';
+            rx_complete = 1;
+            printf("TIMEOUT: Mensaje forzado por inactividad\r\n");
+        }
+    }
+
+  }
+  /* USER CODE END 3 */
+}
+
+// ... (El resto de funciones como SystemClock_Config, MPU_Config, MX_USART3_UART_Init, Error_Handler, etc., deben permanecer en main.c)
